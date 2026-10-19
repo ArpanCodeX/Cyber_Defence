@@ -1,0 +1,106 @@
+UNIVERSAL WEBSITE SECURITY PLATFORM
+====================================
+
+1. PROJECT OVERVIEW
+This local MVP protects a demo website.
+It detects suspicious HTTP events and records them.
+It can allow, flag, rate-limit, or temporarily block requests.
+The default mode is detection-only.
+2. HOW IT WORKS
+1. A request enters the Nginx gateway.
+2. ModSecurity and OWASP CRS inspect HTTP input.
+3. Allowed traffic is sent to the demo website.
+4. The demo reports a security event to FastAPI.
+5. FastAPI checks the site policy and stores the event.
+6. Enforcement mode can return 403 or 429 and create an IP block.
+The gateway remains an independent WAF layer if FastAPI is unavailable.
+3. FILE GUIDE
+docker-compose.yml       Starts all local services.
+.env.example             Safe local configuration template.
+gateway/nginx.conf       Nginx reverse proxy and WAF settings.
+app/main.py              FastAPI API, detection, policies, and blocks.
+demo/app.py              Harmless Flask website and event reporter.
+dashboard/src.tsx        React event dashboard.
+dashboard/package.json   Dashboard scripts and dependencies.
+integrations/express.js  Example Node/Express event adapter.
+migrations/001_initial.sql PostgreSQL reference schema.
+tests/test_api.py        Automated API and security tests.
+README.md                Detailed setup and usage guide.
+TEST_REPORT.md            Observed test results and limitations.
+4. COMPONENTS
+React/Vite: Shows recent events and statistics.
+FastAPI: Authenticates events, detects patterns, and applies policies.
+Nginx/ModSecurity CRS: Inspects gateway traffic.
+Redis: Stores distributed request counters when available.
+PostgreSQL: Provisioned for the future database path; SQLite is active locally.
+5. REQUEST FLOW
+Normal request:
+curl http://localhost:8080/
+The gateway forwards it; the demo returns JSON.
+
+Malicious test request:
+An XSS or SQLi test string enters the gateway.
+CRS and/or FastAPI detects it and records an alert.
+In detection-only mode it is flagged, not blocked.
+With enforcement enabled, it returns 403.
+
+Rate-limit request:
+Repeated requests exceed the site threshold.
+FastAPI returns 429 in enforcement mode.
+The source IP receives a temporary block.
+The block expires after its configured duration.
+6. HOW TO RUN
+cp .env.example .env
+docker compose up --build
+docker compose down
+Dashboard: http://localhost:5173
+Demo gateway: http://localhost:8080
+API docs: http://localhost:8000/docs
+The upstream is configurable with BACKEND in docker-compose.yml/.env.
+Synthetic X-Demo-Client-IP testing is disabled unless ALLOW_TEST_CLIENT_IP=1.
+7. HOW TO TEST
+Normal traffic:
+curl -i http://localhost:8080/
+
+XSS detection:
+curl -i 'http://localhost:8080/search?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E'
+
+Rate detection:
+for n in $(seq 1 12); do curl -s -o /dev/null http://localhost:8080/; done
+
+View events:
+curl -H "Authorization: Bearer $CYBER_ADMIN_TOKEN" \
+  http://localhost:8000/api/v1/events
+
+Run automated tests:
+python -m pytest -q
+
+Run the bounded local script:
+CYBER_ADMIN_TOKEN="$(grep '^CYBER_ADMIN_TOKEN=' .env | cut -d= -f2-)" \
+  ./scripts/demo_attack.sh
+8. CURRENT STATUS
+Implemented: FastAPI authentication, event storage, detection, policies,
+allowlists, emergency disable, temporary blocks, IP validation, Redis
+counters, Compose files, demo site, dashboard, and automated tests.
+Verified locally: 11 automated tests pass; the React production build passes.
+Real FastAPI and demo processes passed normal traffic, SQLi event persistence,
+and a direct 403 enforcement test. The gateway decision path is covered by
+the automated suite and denies before proxying when Nginx is running.
+
+Partially implemented: Nginx/ModSecurity is configured, but Docker is absent,
+so gateway routing and CRS blocking were not end-to-end verified. The demo
+reports events to FastAPI, so direct backend enforcement works; gateway-blocked
+requests never reach the demo reporter and are not automatically persisted.
+Redis counters are coded and configured, but a live Redis container was not
+verified. PostgreSQL is provisioned but not used by the API; SQLite is active.
+The dashboard reads persisted FastAPI events, but browser/container operation
+was not verified here. The demo uses synthetic client IP headers for tests.
+
+Not implemented: port scanning detection from real network telemetry and
+volumetric DDoS protection. Port-probe event detection exists only for
+authorized integration telemetry. HTTP inspection cannot detect all scans.
+
+Verdict: this is a useful local MVP and a reusable event/policy API, not yet a
+verified universal security platform. Docker-based gateway testing, live
+Redis/PostgreSQL integration, gateway-to-event correlation, TLS, stronger RBAC,
+monitoring, backups, and production secret management remain.

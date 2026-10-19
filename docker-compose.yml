@@ -1,0 +1,103 @@
+services:
+  gateway:
+    image: owasp/modsecurity-crs:nginx
+    ports: ["8080:8080"]
+    environment:
+      BACKEND: ${BACKEND:-http://express-demo:8081}
+      SITE_KEY: ${CYBER_ADMIN_TOKEN:-local-admin-change-me}
+      PORT: "8080"
+      MODSEC_RULE_ENGINE: ${MODSEC_RULE_ENGINE:-DetectionOnly}
+      ALLOW_TEST_CLIENT_IP: ${ALLOW_TEST_CLIENT_IP:-0}
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/templates/conf.d/default.conf.template:ro
+    depends_on:
+      demo:
+        condition: service_healthy
+      express-demo:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+  demo:
+    build: ./demo
+    environment:
+      EVENT_API_URL: http://api:8000/api/v1/events
+      EVENT_SITE_KEY: ${CYBER_ADMIN_TOKEN:-local-admin-change-me}
+      EVENT_SITE_ID: demo
+    expose: ["8081"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  express-demo:
+    build: ./demo/Express
+    expose: ["8081"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8081/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  api:
+    build: .
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      CYBER_ADMIN_TOKEN: ${CYBER_ADMIN_TOKEN:-local-admin-change-me}
+      CYBER_DB_PATH: /data/events.db
+      TRUSTED_PROXIES: 127.0.0.1/32,::1/128
+      ENFORCEMENT_MODE: ${ENFORCEMENT_MODE:-detection}
+      REDIS_URL: redis://redis:6379/0
+      DEFAULT_REQUEST_LIMIT: ${DEFAULT_REQUEST_LIMIT:-10}
+    volumes: ["api-data:/data"]
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  redis:
+    image: redis:7-alpine
+    expose: ["6379"]
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: security
+      POSTGRES_USER: security
+      POSTGRES_PASSWORD: local-only-change-me
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    expose: ["5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U security -d security"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  dashboard:
+    build: ./dashboard
+    ports: ["5173:5173"]
+    environment:
+      VITE_API_URL: http://localhost:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+volumes:
+  api-data:
+  postgres-data:
