@@ -40,7 +40,13 @@ redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True,
                                      socket_connect_timeout=1, socket_timeout=1) if redis and REDIS_URL else None
 
 app = FastAPI(title="Universal Website Security Platform", version="1.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","),
+cors_origins = [origin.strip() for origin in os.getenv(
+    "CORS_ORIGINS", "http://localhost:5174,http://127.0.0.1:5174"
+).split(",") if origin.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1):517[34]$",
                    allow_methods=["GET", "POST", "PUT"], allow_headers=["*"])
 
 windows: dict[tuple[str, str], deque[float]] = defaultdict(deque)
@@ -315,7 +321,7 @@ def inspect(event: Event, request: Request, x_site_key: str = Header(default="")
     alerts = detect(event, policy)
     allowed = source in policy.allowlist
     should_block = bool(alerts) and (ENFORCEMENT or policy.enforcement) and not policy.emergency_disable and not allowed
-    if should_block and any(a in alerts for a in ("brute_force", "request_flood")):
+    if should_block and any(a in alerts for a in ("brute_force", "request_flood", "port_scan")):
         expires = now + timedelta(seconds=policy.block_duration_seconds)
         save_block(event.site_id, source, expires, ",".join(alerts))
     action = "block" if should_block else ("flag" if alerts else "allow")
@@ -351,11 +357,13 @@ def gateway_check(
         )
     alerts = detect(event, policy)
     if alerts and (ENFORCEMENT or policy.enforcement) and not policy.emergency_disable and source not in policy.allowlist:
-        if any(alert in alerts for alert in ("request_flood", "brute_force")):
+        if any(alert in alerts for alert in ("request_flood", "brute_force", "port_scan")):
             expires = datetime.now(timezone.utc) + timedelta(seconds=policy.block_duration_seconds)
             save_block(site_id, source, expires, ",".join(alerts))
             persist(event, alerts, "block", "gateway policy violation")
-            raise HTTPException(403, "temporarily blocked", headers={"X-Security-Status": "429"})
+            status = "429" if "request_flood" in alerts or "brute_force" in alerts else "403"
+            raise HTTPException(403, "temporarily blocked",
+                                headers={"X-Security-Status": status})
         persist(event, alerts, "block", "gateway policy violation")
         raise HTTPException(403, "blocked by security policy", headers={"X-Security-Status": "403"})
     if alerts:

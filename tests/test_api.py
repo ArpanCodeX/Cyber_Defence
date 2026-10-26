@@ -121,3 +121,17 @@ def test_gateway_rate_limit_sets_429_status_for_nginx_mapping():
     assert first.status_code == 200
     assert second.status_code == 403
     assert second.headers["x-security-status"] == "429"
+
+def test_port_probe_telemetry_creates_an_enforced_block():
+    policy = {"request_limit": 100, "window_seconds": 60, "login_limit": 5,
+              "block_duration_seconds": 10, "enforcement": True,
+              "allowlist": [], "emergency_disable": False}
+    assert client.put("/api/v1/sites/demo/policy",
+                      headers={"Authorization":f"Bearer {KEY}"}, json=policy).status_code == 200
+    source = "198.51.100.110"
+    for port in range(3000, 3010):
+        response = event(source_ip=source, event_type="port_probe", destination_port=port)
+    assert response.status_code == 403
+    assert response.json()["action"] == "block"
+    assert client.get("/api/v1/sites/demo/blocks",
+                      headers={"Authorization":f"Bearer {KEY}"}).json()

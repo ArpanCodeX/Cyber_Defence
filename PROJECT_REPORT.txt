@@ -53,7 +53,7 @@ The block expires after its configured duration.
 cp .env.example .env
 docker compose up --build
 docker compose down
-Dashboard: http://localhost:5173
+Dashboard: http://localhost:5174
 Demo gateway: http://localhost:8080
 API docs: http://localhost:8000/docs
 The upstream is configurable with BACKEND in docker-compose.yml/.env.

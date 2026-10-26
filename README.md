@@ -19,8 +19,10 @@ cp .env.example .env
 ./start.sh
 ```
 
-Open the dashboard at <http://localhost:5173>, use the token as the
+Open the dashboard at <http://localhost:5174>, use the token as the
 administrator password, and send traffic through <http://localhost:8080>.
+`start.sh` builds and starts the dashboard from `dashboard/` together with the
+API and gateway services.
 The API is at <http://localhost:8000/docs>. The seeded `demo` site's event
 credential is the same value as `CYBER_ADMIN_TOKEN` for local convenience;
 use a separate generated per-site secret in a real deployment.
@@ -51,6 +53,38 @@ BACKEND=http://express-demo:8081
 Then restart Compose. The Express demo displays the method, path, query,
 request body, and selected proxy headers as JSON. It is intentionally a
 passive receiver and does not replace the event-reporting Flask demo.
+
+### Deploy the protection gateway on Render
+
+For a Render-hosted origin, deploy the gateway as the public service and keep
+the origin URL private. The included [render.yaml](render.yaml) creates the
+security API and gateway services:
+
+1. Create a Render Blueprint from this repository.
+2. Set `CYBER_ADMIN_TOKEN` and `SITE_KEY` to the same strong random value.
+3. Set `BACKEND` to the Render URL of the application being protected, for
+   example `https://my-app.onrender.com`.
+4. Leave `SECURITY_API_URL` as `http://cyber-defense-api:8000` when using the
+   Blueprint's API service.
+5. Start with `MODSEC_RULE_ENGINE=DetectionOnly`, test the gateway URL, then
+   change it to `On` after reviewing alerts.
+6. Add your custom domain to `cyber-defense-gateway` in Render. Render
+   supplies HTTPS for that domain.
+7. Point DNS and your frontend/API clients at the gateway domain, not at the
+   origin's `onrender.com` URL.
+
+The request path is:
+
+```text
+client HTTPS -> Render gateway -> security API policy check -> Render origin
+```
+
+Never expose the origin URL to browsers or leave a public route that bypasses
+the gateway. Render's HTTPS encrypts the client-to-gateway connection; the
+gateway's ModSecurity and policy checks provide the additional protection.
+This setup protects one configured origin. Multi-tenant arbitrary URL
+forwarding requires allowlisted origins and SSRF protections before it is safe
+to expose as a product.
 
 Run the bounded local attack simulation:
 
@@ -128,6 +162,14 @@ and Redis in a hardened deployment. Do not expose either datastore publicly.
 Use TLS, secret management, rotation, backups, and a private origin network in
 production.
 
+The Compose stack also includes `network-sensor`, a host-network Scapy sensor
+that watches authorized lab traffic for TCP SYN scans. After the configured
+number of distinct destination ports is seen, it reports `port_probe` telemetry
+to the API. With enforcement enabled, the API creates a temporary site/IP block
+that prevents subsequent gateway requests from that source. The sensor needs
+`NET_RAW` and should only run on a host and interface you own. It does not
+provide volumetric DDoS protection or replace upstream firewall/CDN controls.
+
 ## Integration contract
 
 Adapters POST JSON matching `app.main.Event` to `/api/v1/events` with
@@ -148,7 +190,7 @@ displays event history; block management remains in the authenticated API.
 - `docker compose ps` shows service state and health.
 - `docker compose logs api gateway demo` shows startup and request errors.
 - If ports are occupied, change the host-side values before the colon in
-  `docker-compose.yml` (`8080`, `8000`, or `5173`).
+  `docker-compose.yml` (`8080`, `8000`, or `5174`).
 - If the dashboard is empty, confirm the token in `.env` matches the token
   entered in the dashboard and that `docker compose logs api` has no errors.
 - If a database schema is stale after development changes, use

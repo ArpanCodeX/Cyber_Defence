@@ -16,7 +16,7 @@ from urllib.request import Request, urlopen
 
 MAX_REQUESTS = 200
 MAX_WORKERS = 10
-DEFAULT_URL = "http://127.0.0.1:8080/"
+DEFAULT_URL = "http://localhost:8080/"
 
 
 def send_request(url: str, timeout: float) -> tuple[int | None, str]:

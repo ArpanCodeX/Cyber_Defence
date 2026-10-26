@@ -50,15 +50,15 @@ if [[ ! -f .env ]]; then
 fi
 
 COMPOSE=("${DOCKER[@]}" compose)
-SERVICES=(redis postgres api demo express-demo gateway dashboard)
+SERVICES=(redis postgres api demo express-demo gateway dashboard network-sensor)
 
 if (( REBUILD )); then
-  "${COMPOSE[@]}" build --pull
+  "${COMPOSE[@]}" build --pull "${SERVICES[@]}"
 else
-  "${COMPOSE[@]}" build
+  "${COMPOSE[@]}" build "${SERVICES[@]}"
 fi
 
-"${COMPOSE[@]}" up -d
+"${COMPOSE[@]}" up -d "${SERVICES[@]}"
 
 printf 'Waiting for services to become ready'
 deadline=$((SECONDS + 180))
@@ -103,10 +103,15 @@ if command -v curl >/dev/null 2>&1; then
     "${COMPOSE[@]}" logs --tail=80 gateway >&2 || true
     exit 1
   fi
+  if ! curl --fail --silent --show-error http://localhost:5174 >/dev/null; then
+    printf 'ERROR: Dashboard is not reachable on port 5174.\n' >&2
+    "${COMPOSE[@]}" logs --tail=80 dashboard >&2 || true
+    exit 1
+  fi
 fi
 
 printf '\nUniversal Website Security Platform is ready.\n'
-printf 'Dashboard:       http://localhost:5173\n'
+printf 'Dashboard:       http://localhost:5174\n'
 printf 'Demo gateway:    http://localhost:8080\n'
 printf 'API docs:        http://localhost:8000/docs\n'
 printf 'Health endpoint: http://localhost:8000/health\n'

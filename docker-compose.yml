@@ -4,6 +4,7 @@ services:
     ports: ["8080:8080"]
     environment:
       BACKEND: ${BACKEND:-http://express-demo:8081}
+      SECURITY_API_URL: ${SECURITY_API_URL:-http://api:8000}
       SITE_KEY: ${CYBER_ADMIN_TOKEN:-local-admin-change-me}
       PORT: "8080"
       MODSEC_RULE_ENGINE: ${MODSEC_RULE_ENGINE:-DetectionOnly}
@@ -87,17 +88,33 @@ services:
       retries: 5
   dashboard:
     build: ./dashboard
-    ports: ["5173:5173"]
+    ports: ["5174:5174"]
     environment:
-      VITE_API_URL: http://localhost:8000
+      VITE_PROXY_TARGET: http://api:8000
     depends_on:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5174').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5
+  network-sensor:
+    build: ./sensor
+    network_mode: host
+    cap_add:
+      - NET_RAW
+    environment:
+      EVENT_API_URL: http://127.0.0.1:8000/api/v1/events
+      EVENT_SITE_KEY: ${CYBER_ADMIN_TOKEN:-local-admin-change-me}
+      EVENT_SITE_ID: demo
+      SENSOR_INTERFACE: ${SENSOR_INTERFACE:-}
+      PORT_SCAN_UNIQUE_PORTS: ${PORT_SCAN_UNIQUE_PORTS:-10}
+      PORT_SCAN_WINDOW_SECONDS: ${PORT_SCAN_WINDOW_SECONDS:-60}
+      PORT_SCAN_COOLDOWN_SECONDS: ${PORT_SCAN_COOLDOWN_SECONDS:-60}
+    depends_on:
+      api:
+        condition: service_healthy
 volumes:
   api-data:
   postgres-data:

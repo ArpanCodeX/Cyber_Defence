@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: cyber-defense-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: CYBER_ADMIN_TOKEN
+        sync: false
+      - key: ENFORCEMENT_MODE
+        value: detection
+
+  - type: web
+    name: cyber-defense-gateway
+    runtime: docker
+    dockerfilePath: ./gateway/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: BACKEND
+        sync: false
+      - key: SECURITY_API_URL
+        value: http://cyber-defense-api:8000
+      - key: SITE_KEY
+        sync: false
+      - key: MODSEC_RULE_ENGINE
+        value: DetectionOnly
+      - key: ALLOW_TEST_CLIENT_IP
+        value: "0"
