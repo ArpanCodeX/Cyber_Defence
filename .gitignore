@@ -5,7 +5,6 @@ __pycache__/
 
 # Local test and environment files
 .pytest_cache/
-.env
 
 # Frontend dependencies and build output
 node_modules/
