@@ -57,6 +57,8 @@ services:
       ENFORCEMENT_MODE: ${ENFORCEMENT_MODE:-detection}
       REDIS_URL: redis://redis:6379/0
       DEFAULT_REQUEST_LIMIT: ${DEFAULT_REQUEST_LIMIT:-10}
+      PORT_SCAN_UNIQUE_PORTS: ${PORT_SCAN_UNIQUE_PORTS:-10}
+      PORT_SCAN_WINDOW_SECONDS: ${PORT_SCAN_WINDOW_SECONDS:-60}
     volumes: ["api-data:/data"]
     ports: ["8000:8000"]
     healthcheck:

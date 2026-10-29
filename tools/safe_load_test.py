@@ -15,7 +15,7 @@ from urllib.request import Request, urlopen
 
 
 MAX_REQUESTS = 200
-MAX_WORKERS = 10
+MAX_WORKERS = 15
 DEFAULT_URL = "http://localhost:8080/"
 
 

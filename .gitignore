@@ -11,5 +11,6 @@ node_modules/
 dist/
 build/
 
+
 # Markdown documentation
 *.md

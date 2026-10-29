@@ -163,12 +163,14 @@ Use TLS, secret management, rotation, backups, and a private origin network in
 production.
 
 The Compose stack also includes `network-sensor`, a host-network Scapy sensor
-that watches authorized lab traffic for TCP SYN scans. After the configured
-number of distinct destination ports is seen, it reports `port_probe` telemetry
-to the API. With enforcement enabled, the API creates a temporary site/IP block
-that prevents subsequent gateway requests from that source. The sensor needs
-`NET_RAW` and should only run on a host and interface you own. It does not
-provide volumetric DDoS protection or replace upstream firewall/CDN controls.
+that watches authorized lab traffic for common TCP and UDP port probes. It
+classifies SYN, FIN, NULL, Xmas, ACK, and UDP probes. After the configured
+number of distinct destination ports is seen for one source and scan type, it
+reports `port_probe` telemetry with the scan type to the API. With enforcement
+enabled, the API creates a temporary site/IP block that prevents subsequent
+gateway requests from that source. The sensor needs `NET_RAW` and should only
+run on a host and interface you own. It does not provide volumetric DDoS
+protection or replace upstream firewall/CDN controls.
 
 ## Integration contract
 

@@ -51,8 +51,10 @@ app.add_middleware(
 
 windows: dict[tuple[str, str], deque[float]] = defaultdict(deque)
 failed_logins: dict[tuple[str, str], deque[float]] = defaultdict(deque)
-port_probes: dict[tuple[str, str], deque[tuple[float, int]]] = defaultdict(deque)
+port_probes: dict[tuple[str, str, str], deque[tuple[float, int]]] = defaultdict(deque)
 temporary_blocks: dict[tuple[str, str], float] = {}
+PORT_SCAN_UNIQUE_PORTS = int(os.getenv("PORT_SCAN_UNIQUE_PORTS", "10"))
+PORT_SCAN_WINDOW_SECONDS = int(os.getenv("PORT_SCAN_WINDOW_SECONDS", "60"))
 
 SQLI_PATTERNS = [re.compile(r"\bunion\s+(?:all\s+)?select\b", re.I), re.compile(r"\b(?:or|and)\s+['\"]?\w+['\"]?\s*=\s*['\"]?\w+", re.I),
                  re.compile(r"(?:--|/\*|\*/|;\s*drop\s+)", re.I), re.compile(r"\bselect\b.+\bfrom\b", re.I)]
@@ -70,6 +72,7 @@ class Event(BaseModel):
     failed_login: bool = False
     event_type: str = Field(default="http_request", max_length=64)
     destination_port: int | None = Field(default=None, ge=1, le=65535)
+    scan_type: str | None = Field(default=None, pattern=r"^(syn|connect|fin|null|xmas|ack|udp)$")
     severity: str = Field(default="info", pattern=r"^(info|low|medium|high|critical)$")
     rule_id: str | None = Field(default=None, max_length=100)
 
@@ -111,6 +114,7 @@ def initialize_db():
         CREATE TABLE IF NOT EXISTS security_events (
           id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, site_id TEXT NOT NULL,
           source_ip TEXT NOT NULL, path TEXT NOT NULL, method TEXT NOT NULL, event_type TEXT NOT NULL,
+          scan_type TEXT,
           alerts TEXT NOT NULL, severity TEXT NOT NULL, action TEXT NOT NULL, rule_id TEXT, reason TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS ip_blocks (
@@ -120,7 +124,8 @@ def initialize_db():
         """)
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(security_events)")}
         for name, declaration in (("severity", "TEXT NOT NULL DEFAULT 'info'"),
-                                  ("rule_id", "TEXT"), ("reason", "TEXT NOT NULL DEFAULT ''")):
+                                  ("rule_id", "TEXT"), ("reason", "TEXT NOT NULL DEFAULT ''"),
+                                  ("scan_type", "TEXT")):
             if name not in columns:
                 conn.execute(f"ALTER TABLE security_events ADD COLUMN {name} {declaration}")
         if not conn.execute("SELECT 1 FROM sites LIMIT 1").fetchone() and ADMIN_TOKEN:
@@ -261,10 +266,11 @@ def detect(event: Event, policy: Policy) -> list[str]:
     if any(pattern.search(inspected) for pattern in XSS_PATTERNS):
         alerts.append("xss")
     if event.event_type == "port_probe" and event.destination_port:
-        port_probes[key].append((now, event.destination_port))
-        while port_probes[key] and now - port_probes[key][0][0] > 60:
-            port_probes[key].popleft()
-        if len({port for _, port in port_probes[key]}) >= 10:
+        probe_key = (event.site_id, event.source_ip, event.scan_type or "unknown")
+        port_probes[probe_key].append((now, event.destination_port))
+        while port_probes[probe_key] and now - port_probes[probe_key][0][0] > PORT_SCAN_WINDOW_SECONDS:
+            port_probes[probe_key].popleft()
+        if len({port for _, port in port_probes[probe_key]}) >= PORT_SCAN_UNIQUE_PORTS:
             alerts.append("port_scan")
     return sorted(set(alerts))
 
@@ -273,12 +279,13 @@ def persist(event: Event, alerts: list[str], action: str, reason: str):
     timestamp = _now()
     with connect_db() as conn:
         conn.execute("""INSERT INTO security_events
-          (timestamp,site_id,source_ip,path,method,event_type,alerts,severity,action,rule_id,reason)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+          (timestamp,site_id,source_ip,path,method,event_type,scan_type,alerts,severity,action,rule_id,reason)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
           (timestamp, event.site_id, event.source_ip, event.path, event.method.upper(), event.event_type,
-           json.dumps(alerts), event.severity, action, event.rule_id, reason[:500]))
+           event.scan_type, json.dumps(alerts), event.severity, action, event.rule_id, reason[:500]))
     return {"timestamp": timestamp, "site_id": event.site_id, "source_ip": event.source_ip,
-            "path": event.path, "event_type": event.event_type, "alerts": alerts, "action": action,
+            "path": event.path, "event_type": event.event_type, "scan_type": event.scan_type,
+            "alerts": alerts, "action": action,
             "severity": event.severity, "reason": reason}
 
 

@@ -135,3 +135,20 @@ def test_port_probe_telemetry_creates_an_enforced_block():
     assert response.json()["action"] == "block"
     assert client.get("/api/v1/sites/demo/blocks",
                       headers={"Authorization":f"Bearer {KEY}"}).json()
+
+def test_port_probe_scan_type_is_persisted_and_detected():
+    policy = {"request_limit": 100, "window_seconds": 60, "login_limit": 5,
+              "block_duration_seconds": 10, "enforcement": False,
+              "allowlist": [], "emergency_disable": False}
+    assert client.put("/api/v1/sites/demo/policy",
+                      headers={"Authorization": f"Bearer {KEY}"}, json=policy).status_code == 200
+    source = "198.51.100.111"
+    response = None
+    for port in range(4000, 4010):
+        response = event(source_ip=source, event_type="port_probe",
+                          destination_port=port, scan_type="xmas",
+                          rule_id="network.xmas-port-scan")
+    assert response is not None
+    assert response.status_code == 200
+    assert response.json()["scan_type"] == "xmas"
+    assert "port_scan" in response.json()["alerts"]
